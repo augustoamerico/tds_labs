@@ -1,0 +1,207 @@
+---
+title: "TF-IDF and NMF on Parlamentar Activity"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+reticulate::use_condaenv(condaenv="/home/tds/anaconda3", required = T)
+PROJHOME <- rprojroot::find_rstudio_root_file()
+reticulate::py_run_string(paste0("PROJHOME='",PROJHOME,"'"))
+```
+
+
+```{python}
+import re
+import os
+import sys
+
+sys.path.insert(0, os.path.join(PROJHOME,"src","modules"))
+
+from nltk.tokenize import RegexpTokenizer
+from nltk.stem import RSLPStemmer
+from nltk.corpus import stopwords as StopWords
+from parliament_discussions_document_parser import ParliamentDiscussionsDocumentParser
+```
+
+
+```{python}
+parliament_discussion_document_path = os.path.join(
+    PROJHOME,"resources/example_of_parlamentar_discussion/darl14sl02n014.txt"
+    )
+deputies_docs_unprocessed, documents_unprocessed_idx, documents_to_deputies = ParliamentDiscussionsDocumentParser(
+    parliament_discussion_document_path).parse()
+```
+
+
+```{python}
+tokenizer = RegexpTokenizer(r'\w+')
+ps = RSLPStemmer()
+pt_stop_words = StopWords.words('portuguese')
+
+def mytokeniser(s):
+    aux = filter(lambda x: x not in pt_stop_words , [w.lower() for w in tokenizer.tokenize(s)])
+    return list(map(ps.stem, aux))
+
+documents_tokenized = {}
+
+for idx in documents_unprocessed_idx:
+    documents_tokenized[idx] = mytokeniser(documents_unprocessed_idx[idx])
+
+tokenized_corpus = list(documents_tokenized.values())
+```
+
+
+```{python}
+docs_to_be_removed = []
+for idx in range(0, len(tokenized_corpus)):
+    if len(tokenized_corpus[idx]) == 0:
+        deputies_docs_unprocessed[documents_to_deputies[idx]].remove(idx)
+        docs_to_be_removed.append(idx)
+        
+for el in sorted(docs_to_be_removed, reverse=True):
+    del tokenized_corpus[el]
+```
+
+
+```{python}
+
+tokenized_corpus_idf_search = list(map(set, tokenized_corpus))
+
+vocab = set()
+
+for doc in tokenized_corpus:
+    vocab = vocab.union(set(doc))  
+
+print(f"My vocabolary size is {len(vocab)}")
+```
+
+```{python}
+import math
+
+idfvocab = {}
+
+def idf(term, corpus):
+    cnt =  sum([1 if term in doc else 0 for doc in corpus])
+    return math.log10( len(corpus) / cnt )
+
+for term in vocab:
+    term_idf = idf(term, tokenized_corpus_idf_search)
+    idfvocab[term] = term_idf
+```
+
+```{python}
+import numpy as np
+
+idfvocab_it = [(el[0],el[1]) for el in idfvocab.items()]
+
+aux = np.array( idfvocab_it )
+low = float( min( aux[:,1] ) )
+high = float( max( aux[:,1] ) )
+
+print(f"Min is {low} and max is {high}")
+```
+
+
+```{python}
+def keep_terms( lower, upper, threshold, step, idf_vocabulary ):
+    low = lower
+    up = upper
+    candidates = idf_vocabulary
+    while len(candidates) > threshold:
+        #print(f"current vocabolary size is {len(candidates)}")
+        low = low + step
+        up = up - step
+        candidates = [  term for term in idf_vocabulary if term[1] >= low and term[1] <= up  ]
+    return candidates
+
+
+#cnd = keep_terms(low, high, int(len(idfvocab_it)*0.2), 0.005, idfvocab_it)
+cnd = keep_terms(low, high, len(idfvocab_it), 0.005, idfvocab_it)
+len(cnd)
+
+vc = np.array(cnd) #a matrix, with column 0 being terms and column 1 being idf
+vc_terms = vc[:,0]
+```
+
+
+```{python}
+# Here is an optimized implementation for te creation of the TF.IDF Matrix, that takes less than half the time than the implementation above
+
+def normTFx_optimized(term, docMapCount, docLength):
+    return (docMapCount.get(term) or 0)/docLength
+
+
+from functools import reduce
+
+
+def reduce_doc_map_count(reduced, el):
+    if el in reduced:
+        reduced[el] += 1
+    else:
+        reduced[el] = 1
+    return reduced
+
+tokenized_corpus_map_count = list(map( lambda doc: reduce( reduce_doc_map_count , doc, {}  ) , tokenized_corpus  ))
+
+def tfidfmat(corpusMapCount, corpus, tl,idfvocab) :
+    mat =[]
+    for term in tl :
+        idft = idfvocab[term]
+        row = []
+        for i in range(len(corpus)):
+            tft = normTFx_optimized(term,corpusMapCount[i],len(corpus[i]))
+            tf_idf_term_document = tft*idft
+            row.append(tf_idf_term_document)
+        mat.append(row)
+    return mat    
+            
+
+tfidf_matrix = tfidfmat(tokenized_corpus_map_count, tokenized_corpus, vc_terms, idfvocab) 
+tfidf_matrix_np = np.array(tfidf_matrix)
+```
+
+```{python}
+print(f"The document with index 0 contains {len(tokenized_corpus[0])} words")
+print(f"The term with index 0 is `{vc_terms[0]}`")
+
+print(f"The importance of the term `{vc_terms[0]}` in the document with idx = 0 is {tfidf_matrix_np[0,0]}")
+```
+
+```{python}
+from sklearn.decomposition import NMF
+model = NMF(n_components=4, init='random', random_state=1)
+W = model.fit_transform(tfidf_matrix_np) # loadings
+H = model.components_ #scores
+```
+
+```{python}
+def get_top_N_terms(matrix_slice, N):
+    return matrix_slice.argsort()[-N:]
+
+def get_terms_from_slice(loadings_matrix, idx, topN, bag_of_words, orientation="col"):
+    '''
+        the parameter `orientation` can either be "col" or "row", so we can process a loadings matrix being it transposed or not
+    '''
+    k = None
+    if orientation == "col":
+        k = loadings_matrix[:,idx]
+    elif orientation == "row":
+        k = loadings_matrix[idx,:]
+    else:
+        raise Exception("Orientation not recognized")
+    k_top5terms_idx = get_top_N_terms(k,topN)
+    return bag_of_words[k_top5terms_idx]
+
+```
+
+
+```{python}
+top_words = 10
+for k in range(0,W.shape[1]):
+    # Get terms for the k-th characteristic / topic
+    print(f"The terms with more weight in the component {k} are: {get_terms_from_slice(W, k, top_words, vc_terms)}")
+
+# here we are printing the top 7, but the this choise is arbitrary - we are going to analyze as much as we need to understand the topics
+```
+

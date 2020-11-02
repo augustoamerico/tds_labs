@@ -1,0 +1,166 @@
+---
+title: "TF-IDF of extracted entities from interventions on Parlamentar Activity"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+reticulate::use_condaenv(condaenv="/home/tds/anaconda3", required = T)
+PROJHOME <- rprojroot::find_rstudio_root_file()
+reticulate::py_run_string(paste0("PROJHOME='",PROJHOME,"'"))
+```
+
+
+```{python}
+import spacy
+import re
+
+from typing import List, Tuple
+from nltk.corpus import stopwords as StopWords
+
+sys.path.insert(0, os.path.join(PROJHOME,"src","modules"))
+
+nlp = spacy.load("pt_core_news_sm")
+```
+
+
+```{python}
+parliament_discussion_document_path = os.path.join(
+    PROJHOME,"resources/example_of_parlamentar_discussion/darl14sl02n014.txt"
+    )
+deputies_docs_unprocessed, documents_unprocessed_idx, documents_to_deputies = ParliamentDiscussionsDocumentParser(
+    parliament_discussion_document_path).parse()
+```
+
+
+```{python}
+pt_stop_words = StopWords.words('portuguese')
+
+def parse_entities(document: str) -> List[str]:
+    nlp_doc = nlp(document)
+    return [re.sub(' +', ' ', ent.text.replace("\n"," ")) for ent in nlp_doc.ents]
+    
+```
+
+
+```{python}
+documents_processed_entities = {}
+
+for idx in documents_unprocessed_idx:
+    documents_processed_entities[idx] = parse_entities(documents_unprocessed_idx[idx])
+
+entities_corpus = list(documents_processed_entities.values())
+```
+
+```{python}
+docs_to_be_removed = []
+for idx in documents_processed_entities.keys():
+    if len(documents_processed_entities[idx]) == 0:
+        docs_to_be_removed.append(idx)
+        deputies_docs_unprocessed[documents_to_deputies[idx]].remove(idx)
+        del documents_to_deputies[idx]
+
+for el in sorted(docs_to_be_removed, reverse=True):
+    del documents_processed_entities[el]
+    
+entities_corpus = list(documents_processed_entities.values())
+```
+
+
+```{python}
+entities_corpus_idf_search = list(map(set, entities_corpus))
+
+vocab = set()
+
+for doc in entities_corpus:
+    vocab = vocab.union(set(doc))  
+
+print(f"My vocabolary size is {len(vocab)}")
+```
+
+```{python}
+import math
+
+idfvocab = {}
+
+def idf(term, corpus):
+    cnt =  sum([1 if term in doc else 0 for doc in corpus])
+    return math.log10( len(corpus) / cnt )
+
+for term in vocab:
+    term_idf = idf(term, entities_corpus_idf_search)
+    idfvocab[term] = term_idf
+```
+
+```{python}
+import numpy as np
+
+idfvocab_it = [(el[0],el[1]) for el in idfvocab.items()]
+
+aux = np.array( idfvocab_it )
+low = float( min( aux[:,1] ) )
+high = float( max( aux[:,1] ) )
+
+print(f"Min is {low} and max is {high}")
+```
+
+```{python}
+vc = np.array(idfvocab_it) #a matrix, with column 0 being terms and column 1 being idf
+vc_terms = vc[:,0]
+```
+
+```{python}
+def normTFx(term,doc):
+    return doc.count(term)/len(doc)
+
+def tfidfmat(corpus, tl, idfvocab) :
+    mat =[]
+    for term in tl :
+        idft = idfvocab[term]
+        row = []
+        for doc in corpus:
+            tft = normTFx(term,doc)
+            tf_idf_term_document = tft*idft
+            row.append(tf_idf_term_document)
+        mat.append(row)
+    return mat    
+            
+    
+
+tfidf_matrix = tfidfmat(entities_corpus, vc_terms, idfvocab) 
+tfidf_matrix_np = np.array(tfidf_matrix)
+```
+
+```{python}
+tfidf_matrix_np.shape
+```
+
+```{python}
+assert len(list(documents_processed_entities.keys())) == len(documents_to_deputies)
+```
+
+
+```{python}
+def print_entities(idx_entities_scored: List[Tuple[int, float]]):
+    for idx, score in idx_entities_scored:
+        print(f"{vc_terms[idx]} - {round(score,3)}")
+
+def column_in_tfidf_of_document_with_index(document_index):
+    return list(documents_processed_entities.keys()).index(document_index)
+        
+def print_info_for_document(document_idx):
+    print(documents_to_deputies[document_idx])
+    column_idx = column_in_tfidf_of_document_with_index(document_idx)
+    print_entities(list(filter(lambda x: x[1] > 0, sorted(enumerate(tfidf_matrix_np[:,column_idx].tolist()), key=lambda x: x[1], reverse=True))))
+        
+```
+
+```{python}
+print_info_for_document(deputies_docs_unprocessed["O Sr. André Ventura (CH)"][1])
+```
+
+
+```{python}
+documents_unprocessed_idx[deputies_docs_unprocessed["O Sr. André Ventura (CH)"][12]]
+```
+
