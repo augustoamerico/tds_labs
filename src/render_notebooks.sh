@@ -3,6 +3,8 @@ NOTEBOOKS_OUTPUT=$2
 
 for f in $NOTEBOOKS_FOLDER/*
 do
-	echo "pweave -f notebook ${f}"
-	pweave -f notebook ${f}
+	filename=$(basename -- $f)
+	filename="${filename%.*}"
+	echo "jupytext --to $f --output $NOTEBOOKS_OUTPUT/$filename.ipynb"
+	jupytext --to notebook $f --output $NOTEBOOKS_OUTPUT/$filename.ipynb
 done
