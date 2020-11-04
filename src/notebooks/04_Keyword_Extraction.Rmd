@@ -1,0 +1,122 @@
+---
+title: "TF-IDF of extracted entities from interventions on Parlamentar Activity"
+output: html_document
+---
+
+```{r setup-keywords-extraction, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+reticulate::use_condaenv(condaenv="/home/tds/anaconda3", required = T)
+PROJHOME <- rprojroot::find_rstudio_root_file()
+reticulate::py_run_string(paste0("PROJHOME='",PROJHOME,"'"))
+library(echarts4r)
+```
+
+
+## Keyword Extraction
+
+In this notebook, we are going to point out on trying two python packages for keyword extraction:
+- (YAKE)[https://github.com/LIAAD/yake]
+- (pke)[https://github.com/boudinfl/pke]
+
+
+Let's start with YAKE
+
+
+###
+
+```{python}
+import yake
+
+from typing import List, Tuple, Dict
+
+sys.path.insert(0, os.path.join(PROJHOME,"modules"))
+
+from parliament_discussions_document_parser import ParliamentDiscussionsDocumentParser
+
+```
+
+
+```{python}
+parliament_discussion_document_path = os.path.join(
+    PROJHOME,"..","resources/example_of_parlamentar_discussion/darl14sl02n014.txt"
+    )
+deputies_docs_unprocessed, documents_unprocessed_idx, documents_to_deputies = ParliamentDiscussionsDocumentParser(
+    parliament_discussion_document_path).parse()
+```
+
+
+```{python}
+def concatenate_all_interventions(interventions_idx: List[int], interventions_idx_map: Dict[int, str]):
+    concatenated_interventions = ""
+    for idx in interventions_idx:
+        concatenated_interventions += interventions_idx_map[idx] + "\n"
+    return concatenated_interventions
+
+```
+
+
+```{python}
+print(deputies_docs_unprocessed.keys())
+```
+
+```{python}
+text = concatenate_all_interventions(deputies_docs_unprocessed['O Sr. Jerónimo de Sousa (PCP)'], documents_unprocessed_idx)
+```
+
+```{python}
+print(text)
+```
+
+
+```{python}
+def generate_keywords_from(intervinient: str, lan: str = "pt", ngram: int = 5, deduplicate_threshold = 0.5):
+    text = concatenate_all_interventions(deputies_docs_unprocessed[intervinient], documents_unprocessed_idx)
+    kw_extractor = yake.KeywordExtractor(lan=lan,n=ngram,dedupLim=deduplicate_threshold)
+    return dict(kw_extractor.extract_keywords(text))
+
+```
+
+
+
+```{r}
+#df_keywords = reticulate::py_capture_output("generate_keywords_from('O Sr. André Ventura (CH)')")
+df_keywords = as.data.frame(t(as.data.frame(reticulate::py$generate_keywords_from('O Sr. André Ventura (CH)'))))
+df_keywords$keywords = c(rownames(df_keywords))
+colnames(df_keywords) = c("scores","keywords")
+df_keywords$scores = df_keywords$scores/min(df_keywords$scores) - min(df_keywords$scores/min(df_keywords$scores))*1000
+colnames(df_keywords) = c("freq","word")
+```
+
+
+```{r}
+df_keywords %>% 
+    echarts4r::e_color_range(freq, color) %>% 
+    echarts4r::e_charts() %>% 
+    echarts4r::e_cloud(word, freq, color, shape = "circle", sizeRange = c(3, 15)) %>% 
+    echarts4r::e_title("Wordcloud", "Random strings")
+```
+
+```{r}
+d <- data.frame(word = rownames(df_keywords), freq = df_keywords$freq)
+wordcloud2::wordcloud2(d)
+```
+
+```{r}
+wordcloud::wordcloud(df_keywords$word, df_keywords$freq)
+```
+
+
+```{r}
+generate_wordcloud_from_intervinient <- function(intervinient, ngram=3){
+    df_keywords = as.data.frame(t(as.data.frame(reticulate::py$generate_keywords_from(intervinient, ngram=as.integer(ngram)))))
+    df_keywords$keywords = c(rownames(df_keywords))
+    colnames(df_keywords) = c("scores","keywords")
+    df_keywords$scores = df_keywords$scores*-1
+    df_keywords$scores = sqrt(df_keywords$scores - min(df_keywords$scores))
+    colnames(df_keywords) = c("freq","word")
+    print(df_keywords)
+    d <- data.frame(word = rownames(df_keywords), freq = df_keywords$freq)
+    return(wordcloud2::wordcloud2(d,size = .3))
+}
+```
+

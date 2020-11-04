@@ -18,7 +18,9 @@ import re
 from typing import List, Tuple
 from nltk.corpus import stopwords as StopWords
 
-sys.path.insert(0, os.path.join(PROJHOME,"src","modules"))
+sys.path.insert(0, os.path.join(PROJHOME,"modules"))
+
+from parliament_discussions_document_parser import ParliamentDiscussionsDocumentParser
 
 nlp = spacy.load("pt_core_news_sm")
 ```
@@ -26,7 +28,7 @@ nlp = spacy.load("pt_core_news_sm")
 
 ```{python}
 parliament_discussion_document_path = os.path.join(
-    PROJHOME,"resources/example_of_parlamentar_discussion/darl14sl02n014.txt"
+    PROJHOME,"..","resources/example_of_parlamentar_discussion/darl14sl02n014.txt"
     )
 deputies_docs_unprocessed, documents_unprocessed_idx, documents_to_deputies = ParliamentDiscussionsDocumentParser(
     parliament_discussion_document_path).parse()

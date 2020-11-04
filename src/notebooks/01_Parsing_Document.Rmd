@@ -3,7 +3,7 @@ title: "Parsing Parliament Discussion Document"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup-parsing-document, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 reticulate::use_condaenv(condaenv="/home/tds/anaconda3", required = T)
 PROJHOME <- rprojroot::find_rstudio_root_file()
@@ -29,7 +29,9 @@ REGEX_TO_SPLIT_DOCUMENTS = "(O|A)+\s+Sr(\.|\.º|\.ª)\s+([A-zÀ-ú]|\s*)+(\(.*\)
 
 deputies_and_president = set()
 
-with open(os.path.join(PROJHOME,"resources/example_of_parlamentar_discussion/darl14sl02n014.txt")) as file:
+file_path = os.path.join(PROJHOME,"..","resources/example_of_parlamentar_discussion/darl14sl02n014.txt")
+
+with open(file_path) as file:
     pattern = re.compile(REGEX_TO_SPLIT_DOCUMENTS)
     for line in file:
         match = pattern.search(line)
@@ -54,7 +56,7 @@ documents_to_deputies = {}
 doc_idx = 0
 did_first_match = False
 
-with open("resources/example_of_parlamentar_discussion/darl14sl02n014.txt") as file:
+with open(file_path) as file:
     
     first_line = next(file)
     DATE_SECTION_REGEX = "(?i)\d+ de (\w+) de \d{4}"

@@ -1,0 +1,14 @@
+--- 
+title: "Extracting keywords from Parliament Discussions Interventions"
+author: "Tiago dos Santos"
+date: "`r Sys.Date()`"
+site: bookdown::bookdown_site
+---
+
+# Parsing Parliament Discussion's Documents
+
+```{r parsing-text, child="./notebooks/01_Parsing_Document.Rmd"}
+```
+
+```{r parsing-text, child="./notebooks/04_Keyword_Extraction.Rmd"}
+```
