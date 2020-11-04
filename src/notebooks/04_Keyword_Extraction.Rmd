@@ -120,3 +120,8 @@ generate_wordcloud_from_intervinient <- function(intervinient, ngram=3){
 }
 ```
 
+
+```{r}
+generate_wordcloud_from_intervinient("O Sr. André Ventura (CH)")
+```
+
